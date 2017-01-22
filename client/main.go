@@ -287,6 +287,14 @@ func main() {
 			Value: "", // when the value is not empty, the config path must exists
 			Usage: "config from json file, which will override the command from shell",
 		},
+		cli.BoolFlag{
+			Name:  "fast-open",
+			Usage: "Dummy flag, doesn't really do anything",
+		},
+		cli.BoolFlag{
+			Name:  "V",
+			Usage: "Enable VPN mode for shadowsocks-android",
+		},
 	}
 	myApp.Action = func(c *cli.Context) error {
 		config := Config{}
@@ -506,39 +514,43 @@ func main() {
 		log.Println("snmplog:", config.SnmpLog)
 		log.Println("snmpperiod:", config.SnmpPeriod)
 
-		path := "protect_path"
+		if config.Vpn {
 
-		callback := func(fd int) {
-			socket, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
-			if err != nil {
-				log.Println(err)
-				return
+			path := "protect_path"
+
+			callback := func(fd int) {
+				socket, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				defer syscall.Close(socket)
+
+				C.set_timeout(C.int(socket))
+
+				err = syscall.Connect(socket, &syscall.SockaddrUnix{Name: path})
+				if err != nil {
+					log.Println(err)
+					return
+				}
+
+				C.ancil_send_fd(C.int(socket), C.int(fd))
+
+				dummy := []byte{1}
+				n, err := syscall.Read(socket, dummy)
+				if err != nil {
+					log.Println(err)
+					return
+				}
+				if n != 1 {
+					log.Println("Failed to protect fd: ", fd)
+					return
+				}
 			}
-			defer syscall.Close(socket)
 
-			C.set_timeout(C.int(socket))
+			SetNetCallback(callback)
 
-			err = syscall.Connect(socket, &syscall.SockaddrUnix{Name: path})
-			if err != nil {
-				log.Println(err)
-				return
-			}
-
-			C.ancil_send_fd(C.int(socket), C.int(fd))
-
-			dummy := []byte{1}
-			n, err := syscall.Read(socket, dummy)
-			if err != nil {
-				log.Println(err)
-				return
-			}
-			if n != 1 {
-				log.Println("Failed to protect fd: ", fd)
-				return
-			}
 		}
-
-		SetNetCallback(callback)
 
 		smuxConfig := smux.DefaultConfig()
 		smuxConfig.MaxReceiveBuffer = config.SockBuf

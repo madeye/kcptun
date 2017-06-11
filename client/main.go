@@ -71,7 +71,6 @@ import (
 	"net"
 	"os"
 	"strconv"
-	"sync"
 	"syscall"
 	"time"
 
